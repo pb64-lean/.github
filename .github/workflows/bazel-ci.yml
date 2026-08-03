@@ -1,0 +1,116 @@
+name: bazel-ci
+
+# Reusable hermetic Bazel engine for the pb64-lean ecosystem. Runs on the
+# self-hosted NixOS runners; callers must therefore trigger only on push to
+# main, schedule, or workflow_dispatch — never pull_request.
+
+on:
+  workflow_call:
+    inputs:
+      siblings:
+        description: Space-separated sibling repos to clone next to the caller
+        type: string
+        default: ""
+      targets:
+        description: Bazel target pattern(s) to test
+        type: string
+        default: "//..."
+      extra_args:
+        description: Extra flags appended to the bazel test invocation
+        type: string
+        default: ""
+      post_bazel:
+        description: Optional bazel command (without leading "bazel") run after tests
+        type: string
+        default: ""
+      runner_labels:
+        description: JSON array of runner labels
+        type: string
+        default: '["self-hosted","nixos","lean-hermetic"]'
+      timeout_minutes:
+        description: Job timeout (default covers a cold nix Lean bootstrap)
+        type: number
+        default: 240
+
+jobs:
+  bazel:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    steps:
+      - name: Refuse pull_request events
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+        run: |
+          echo "::error::self-hosted jobs must never run on pull_request events"
+          exit 1
+
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v4
+        with:
+          path: ${{ github.repository }}
+
+      - name: Check out siblings
+        uses: pb64-lean/.github/actions/checkout-siblings@main
+        with:
+          siblings: ${{ inputs.siblings }}
+
+      - name: Disk guard
+        run: |
+          avail_gib=$(df --output=avail -BG "$GITHUB_WORKSPACE" | tail -1 | tr -dc '0-9')
+          echo "free disk: ${avail_gib} GiB"
+          if [ "$avail_gib" -lt 20 ]; then
+            echo "::error::only ${avail_gib} GiB free on the runner; refusing to build"
+            exit 1
+          fi
+
+      - name: Probe local bazel-remote cache
+        id: cache
+        run: |
+          if curl -fsS --max-time 2 http://127.0.0.1:9092/status >/dev/null 2>&1; then
+            echo "flag=--remote_cache=http://127.0.0.1:9092" >> "$GITHUB_OUTPUT"
+            echo "using local bazel-remote cache"
+          else
+            echo "flag=" >> "$GITHUB_OUTPUT"
+            echo "no local bazel-remote; building without a remote cache"
+          fi
+
+      - name: bazel test
+        env:
+          TARGETS: ${{ inputs.targets }}
+          EXTRA_ARGS: ${{ inputs.extra_args }}
+          CACHE_FLAG: ${{ steps.cache.outputs.flag }}
+        run: |
+          cd "$GITHUB_WORKSPACE/$GITHUB_REPOSITORY"
+          # shellcheck disable=SC2086
+          bazel --max_idle_secs=1800 test $TARGETS \
+            --test_output=errors --keep_going --color=yes --curses=no \
+            --jobs=24 --local_resources=memory=40960 \
+            $CACHE_FLAG $EXTRA_ARGS
+
+      - name: Post bazel step
+        if: inputs.post_bazel != ''
+        env:
+          POST_BAZEL: ${{ inputs.post_bazel }}
+        run: |
+          cd "$GITHUB_WORKSPACE/$GITHUB_REPOSITORY"
+          # shellcheck disable=SC2086
+          bazel --max_idle_secs=1800 $POST_BAZEL
+
+      - name: Collect testlogs
+        if: failure()
+        run: |
+          cd "$GITHUB_WORKSPACE/$GITHUB_REPOSITORY"
+          rm -rf "$RUNNER_TEMP/testlogs"
+          mkdir -p "$RUNNER_TEMP/testlogs"
+          logs=$(bazel info bazel-testlogs 2>/dev/null || true)
+          if [ -n "$logs" ] && [ -d "$logs" ]; then
+            cp -rL "$logs"/. "$RUNNER_TEMP/testlogs/" || true
+          fi
+
+      - name: Upload testlogs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlogs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/testlogs
+          if-no-files-found: ignore
+          retention-days: 7

@@ -1,0 +1,96 @@
+name: integration
+
+# Reusable integration engine: multi-repo checkout + an arbitrary script on
+# the docker-capable self-hosted runner. One lean-integration runner per
+# machine serializes these jobs, which use fixed host ports (54397-54399)
+# and fixed docker-compose project names. Callers must trigger only on push
+# to main, schedule, or workflow_dispatch — never pull_request.
+
+on:
+  workflow_call:
+    inputs:
+      siblings:
+        description: Space-separated sibling repos to clone next to the caller
+        type: string
+        default: ""
+      run:
+        description: Shell commands executed with bash -euo pipefail in the repo checkout
+        type: string
+        required: true
+      runner_labels:
+        description: JSON array of runner labels
+        type: string
+        default: '["self-hosted","nixos","lean-integration"]'
+      timeout_minutes:
+        type: number
+        default: 90
+
+jobs:
+  integration:
+    runs-on: ${{ fromJSON(inputs.runner_labels) }}
+    timeout-minutes: ${{ inputs.timeout_minutes }}
+    steps:
+      - name: Refuse pull_request events
+        if: github.event_name == 'pull_request' || github.event_name == 'pull_request_target'
+        run: |
+          echo "::error::self-hosted jobs must never run on pull_request events"
+          exit 1
+
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v4
+        with:
+          path: ${{ github.repository }}
+
+      - name: Check out siblings
+        uses: pb64-lean/.github/actions/checkout-siblings@main
+        with:
+          siblings: ${{ inputs.siblings }}
+
+      - name: Disk guard
+        run: |
+          avail_gib=$(df --output=avail -BG "$GITHUB_WORKSPACE" | tail -1 | tr -dc '0-9')
+          echo "free disk: ${avail_gib} GiB"
+          if [ "$avail_gib" -lt 20 ]; then
+            echo "::error::only ${avail_gib} GiB free on the runner; refusing to build"
+            exit 1
+          fi
+
+      - name: Run integration
+        env:
+          RUN_SCRIPT: ${{ inputs.run }}
+        run: |
+          cd "$GITHUB_WORKSPACE/$GITHUB_REPOSITORY"
+          bash -euo pipefail -c "$RUN_SCRIPT"
+
+      - name: Docker cleanup safety net
+        if: always()
+        run: |
+          # A timeout-killed job skips the scripts' EXIT traps; orphaned
+          # containers would hold the fixed ports and poison later runs.
+          docker ps -q --filter name=pg-lean-live- | xargs -r docker rm -f || true
+          docker ps -aq --filter label=com.docker.compose.project=lean-acme-widgets \
+            | xargs -r docker rm -f || true
+          docker volume ls -q --filter label=com.docker.compose.project=lean-acme-widgets \
+            | xargs -r docker volume rm -f || true
+          docker network ls -q --filter label=com.docker.compose.project=lean-acme-widgets \
+            | xargs -r docker network rm 2>/dev/null || true
+
+      - name: Collect testlogs
+        if: failure()
+        run: |
+          cd "$GITHUB_WORKSPACE/$GITHUB_REPOSITORY"
+          rm -rf "$RUNNER_TEMP/testlogs"
+          mkdir -p "$RUNNER_TEMP/testlogs"
+          logs=$(bazel info bazel-testlogs 2>/dev/null || true)
+          if [ -n "$logs" ] && [ -d "$logs" ]; then
+            cp -rL "$logs"/. "$RUNNER_TEMP/testlogs/" || true
+          fi
+
+      - name: Upload testlogs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testlogs-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/testlogs
+          if-no-files-found: ignore
+          retention-days: 7

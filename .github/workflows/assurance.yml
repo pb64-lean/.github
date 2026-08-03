@@ -1,0 +1,44 @@
+name: assurance
+
+# Reusable assurance scan: classification of proof holes, axioms, unsafe,
+# FFI surface, handwritten C, vendored trees, plus a toolchain-pins report.
+# Pure grep — no Lean toolchain — so it runs on GitHub-hosted runners and is
+# safe for pull_request events.
+
+on:
+  workflow_call:
+    inputs:
+      extra_excludes:
+        description: Extra directory names/globs to exclude, space-separated
+        type: string
+        default: ""
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out ${{ github.repository }}
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Check out CI scripts
+        uses: actions/checkout@v4
+        with:
+          repository: pb64-lean/.github
+          path: ci
+
+      - name: Assurance scan
+        env:
+          EXTRA_EXCLUDES: ${{ inputs.extra_excludes }}
+        run: ci/scripts/assurance-scan.sh repo --excludes "$EXTRA_EXCLUDES"
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assurance-report
+          path: assurance-report.md
+          if-no-files-found: ignore
+          retention-days: 30

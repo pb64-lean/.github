@@ -1,0 +1,34 @@
+name: meta-lint
+
+# CI for the CI: lint the shared engine itself on GitHub-hosted runners.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: meta-lint-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: shellcheck
+        run: shellcheck scripts/*.sh
+
+      - name: actionlint
+        run: |
+          curl -sSfL https://github.com/rhysd/actionlint/releases/download/v1.7.7/actionlint_1.7.7_linux_amd64.tar.gz \
+            | tar xz actionlint
+          ./actionlint -color
+
+      - name: yamllint
+        run: |
+          python3 -m pip install --quiet --user yamllint
+          python3 -m yamllint -d "{extends: relaxed, rules: {line-length: disable}}" \
+            .github actions

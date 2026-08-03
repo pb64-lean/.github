@@ -1,0 +1,30 @@
+name: checkout-siblings
+description: >-
+  Clone sibling pb64-lean repositories as peers of the caller's checkout so
+  Bzlmod local_path_override(path = "../<sibling>") resolves. The caller must
+  be checked out at $GITHUB_WORKSPACE/<owner>/<repo> (actions/checkout with
+  path: ${{ github.repository }}); siblings land in the same <owner> directory.
+
+inputs:
+  siblings:
+    description: Space-separated repository names (e.g. "rules_lean tls13-lean")
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Clone siblings at main tip
+      shell: bash
+      env:
+        SIBLINGS: ${{ inputs.siblings }}
+      run: |
+        set -euo pipefail
+        owner_dir="$GITHUB_WORKSPACE/${GITHUB_REPOSITORY%/*}"
+        mkdir -p "$owner_dir"
+        for sib in $SIBLINGS; do
+          rm -rf "$owner_dir/$sib"
+          git clone --quiet --depth 1 --branch main \
+            "https://github.com/pb64-lean/$sib" "$owner_dir/$sib"
+          git -C "$owner_dir/$sib" log -1 --format="sibling $sib @ %h %s"
+        done
