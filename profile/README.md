@@ -65,6 +65,27 @@ end-to-end scripts additionally use Docker Compose, `grpcurl`, and
   developments. There are no published registry versions, tags, or
   cross-version guarantees yet.
 
+## CI
+
+Hermetic `bazel test //...` runs for every repository on self-hosted NixOS
+runners (push to `main`, weekly, and on demand), including the grpcurl
+interop suite for `grpc-lean`. Integration suites run on a docker-capable
+runner: the live PostgreSQL 17/18 matrix for `pg-lean` (quick subset on
+push, the full 26-combination matrix weekly) and the Acme end-to-end
+scenarios (plaintext, TLS, and in-process gRPC-over-TLS). A GitHub-hosted
+**assurance scan** runs on every push and pull request: it fails on `sorry`/
+`admit`, inventories `axiom`/`unsafe`/`@[extern]`/`partial def`, handwritten
+C, and vendored trees, and reports the toolchain and dependency pins.
+
+| Repository | Hermetic | Integration | Assurance |
+| --- | --- | --- | --- |
+| lean-acme-widgets | [![CI](https://github.com/pb64-lean/lean-acme-widgets/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pb64-lean/lean-acme-widgets/actions/workflows/ci.yml) | [![E2E](https://github.com/pb64-lean/lean-acme-widgets/actions/workflows/e2e.yml/badge.svg?branch=main)](https://github.com/pb64-lean/lean-acme-widgets/actions/workflows/e2e.yml) | [![Assurance](https://github.com/pb64-lean/lean-acme-widgets/actions/workflows/assurance.yml/badge.svg?branch=main)](https://github.com/pb64-lean/lean-acme-widgets/actions/workflows/assurance.yml) |
+| protovalidate-lean | [![CI](https://github.com/pb64-lean/protovalidate-lean/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pb64-lean/protovalidate-lean/actions/workflows/ci.yml) | — | [![Assurance](https://github.com/pb64-lean/protovalidate-lean/actions/workflows/assurance.yml/badge.svg?branch=main)](https://github.com/pb64-lean/protovalidate-lean/actions/workflows/assurance.yml) |
+| grpc-lean | [![CI](https://github.com/pb64-lean/grpc-lean/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pb64-lean/grpc-lean/actions/workflows/ci.yml) | (interop in CI) | [![Assurance](https://github.com/pb64-lean/grpc-lean/actions/workflows/assurance.yml/badge.svg?branch=main)](https://github.com/pb64-lean/grpc-lean/actions/workflows/assurance.yml) |
+| pg-lean | [![CI](https://github.com/pb64-lean/pg-lean/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pb64-lean/pg-lean/actions/workflows/ci.yml) | [![PG live](https://github.com/pb64-lean/pg-lean/actions/workflows/pg-live.yml/badge.svg?branch=main)](https://github.com/pb64-lean/pg-lean/actions/workflows/pg-live.yml) | [![Assurance](https://github.com/pb64-lean/pg-lean/actions/workflows/assurance.yml/badge.svg?branch=main)](https://github.com/pb64-lean/pg-lean/actions/workflows/assurance.yml) |
+| tls13-lean | [![CI](https://github.com/pb64-lean/tls13-lean/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pb64-lean/tls13-lean/actions/workflows/ci.yml) | — | [![Assurance](https://github.com/pb64-lean/tls13-lean/actions/workflows/assurance.yml/badge.svg?branch=main)](https://github.com/pb64-lean/tls13-lean/actions/workflows/assurance.yml) |
+| rules_lean | [![CI](https://github.com/pb64-lean/rules_lean/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/pb64-lean/rules_lean/actions/workflows/ci.yml) | — | [![Assurance](https://github.com/pb64-lean/rules_lean/actions/workflows/assurance.yml/badge.svg?branch=main)](https://github.com/pb64-lean/rules_lean/actions/workflows/assurance.yml) |
+
 ## Assurance boundary, briefly
 
 The HACL\* cryptographic primitives carry externally machine-verified
