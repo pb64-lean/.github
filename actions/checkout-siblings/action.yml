@@ -3,7 +3,7 @@ description: >-
   Clone sibling pb64-lean repositories as peers of the caller's checkout so
   Bzlmod local_path_override(path = "../<sibling>") resolves. The caller must
   be checked out at $GITHUB_WORKSPACE/<owner>/<repo> (actions/checkout with
-  path: ${{ github.repository }}); siblings land in the same <owner> directory.
+  the repository slug as path); siblings land in the same <owner> directory.
 
 inputs:
   siblings:
