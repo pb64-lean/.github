@@ -90,13 +90,26 @@ C, and vendored trees, and reports the toolchain and dependency pins.
 
 The HACL\* cryptographic primitives carry externally machine-verified
 correctness proofs and enter Lean through a small, explicit C shim with
-`@[extern]` bindings. The Lean protocol code — TLS state machines, HTTP/2,
-the PostgreSQL wire protocol, gRPC — is implemented and tested
-(known-answer vectors, live-server matrices, end-to-end scenarios) but is
-not itself formally verified against the RFCs. The refinement-typed
-validation layer produces machine-checked propositions about decoded
-values; its supported CEL subset and semantic caveats are documented in
-`protovalidate-lean`'s README, and each repository's README states its own
-current limitations candidly (for example, the TLS server's narrow
-ClientHello acceptance, and the example service's principal being supplied
-by the client pending an authentication layer).
+`@[extern]` bindings.
+
+The Lean protocol code is implemented, tested (known-answer vectors,
+live-server matrices, end-to-end scenarios), **and increasingly carries
+kernel-checked laws about the implementation itself** — not a parallel
+model. Representative results: the TLS record framer (byte conservation,
+fragmentation independence, nonce injectivity, seal/open inversion),
+handshake wire codecs (roundtrips with residual, GREASE-tolerant extension
+preservation), strict-DER exact-slice retention carried through to the
+bytes certificate signatures are verified over, the PostgreSQL protocol
+machine's well-formedness invariant with error/`Sync` recovery attribution,
+gRPC codec laws up to HPACK Huffman decode∘encode, and a registry whose
+RPC-shape agreement is structural rather than checked at runtime. Generated
+protobuf validators ship with `validate_sound` / `validate_complete`
+theorems per message, and the example service binds its authorization
+propositions to an unfabricable authenticated principal.
+
+What is **not** claimed: no refinement theorem against any RFC, no security
+proofs, no timing analysis of Lean control code. Each repository's README
+states its own boundary candidly, and `rules_lean`'s `lean_assurance_test`
+audits the compiled environment (axiom closures, `sorry` reachability,
+`unsafe`/`@[extern]`/`partial` inventories) so those claims stay honest as
+the code moves.
