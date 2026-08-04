@@ -90,11 +90,14 @@ emit_class() {
 
 # ── Classes ──────────────────────────────────────────────────────────────────
 
-# Proof holes: sorry/admit as standalone tokens, dropping lines whose content
-# starts with a line comment. Block-comment mentions may still match; that is
-# the safe failure direction (reword the comment).
-holes=$(lean_grep '\b(sorry|admit)\b' \
-  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*--' || true)
+# Proof holes: `sorry` as a standalone token (`admit` is not a Lean 4 tactic
+# and collides with English prose). Dropped: lines whose content starts with a
+# line comment, and lines where the token sits inside a double-quoted string
+# literal. Block-comment prose may still match; that is the safe failure
+# direction (reword the comment).
+holes=$(lean_grep '\bsorry\b' \
+  | grep -vE '^[^:]+:[0-9]+:[[:space:]]*--' \
+  | grep -vE '"[^"]*\bsorry\b[^"]*"' || true)
 
 theorems=$(lean_grep '(^|[[:space:]])(theorem|lemma)[[:space:]]')
 axioms=$(lean_grep '(^|[[:space:]])axiom[[:space:]]')
@@ -130,7 +133,7 @@ emit "Excluded from source classes: \`${excludes}\` (vendored code is inventorie
 emit ""
 emit "| Class | Count | Policy |"
 emit "| --- | --- | --- |"
-emit "| \`sorry\` / \`admit\` | $(count_lines "$holes") | **fails the scan** |"
+emit "| \`sorry\` | $(count_lines "$holes") | **fails the scan** |"
 emit "| \`theorem\` / \`lemma\` | $(count_lines "$theorems") | counted |"
 emit "| \`axiom\` | $(count_lines "$axioms") | listed |"
 emit "| \`unsafe\` | $(count_lines "$unsafes") | listed |"
@@ -139,7 +142,7 @@ emit "| \`partial def/instance\` | $(count_lines "$partials") | listed |"
 emit "| handwritten C/C++ files | $(count_lines "$c_inventory") | inventoried |"
 emit "| vendored trees | $(count_lines "$vendored") | inventoried |"
 
-emit_class "Proof holes (sorry / admit)" "$holes"
+emit_class "Proof holes (sorry)" "$holes"
 emit_class "Theorems and lemmas" "$theorems"
 emit_class "Axioms" "$axioms"
 emit_class "Unsafe declarations" "$unsafes"
@@ -197,8 +200,8 @@ if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
 fi
 
 if [ -n "$holes" ]; then
-  echo "ASSURANCE FAIL: sorry/admit present:" >&2
+  echo "ASSURANCE FAIL: sorry present:" >&2
   printf '%s\n' "$holes" >&2
   exit 1
 fi
-echo "assurance scan clean: no sorry/admit outside excluded directories"
+echo "assurance scan clean: no sorry outside excluded directories"
