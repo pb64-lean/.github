@@ -96,6 +96,7 @@ emit_class() {
 holes=$(lean_grep '\b(sorry|admit)\b' \
   | grep -vE '^[^:]+:[0-9]+:[[:space:]]*--' || true)
 
+theorems=$(lean_grep '(^|[[:space:]])(theorem|lemma)[[:space:]]')
 axioms=$(lean_grep '(^|[[:space:]])axiom[[:space:]]')
 unsafes=$(lean_grep '(^|[[:space:]])unsafe[[:space:]]')
 externs=$(lean_grep '@\[extern')
@@ -130,6 +131,7 @@ emit ""
 emit "| Class | Count | Policy |"
 emit "| --- | --- | --- |"
 emit "| \`sorry\` / \`admit\` | $(count_lines "$holes") | **fails the scan** |"
+emit "| \`theorem\` / \`lemma\` | $(count_lines "$theorems") | counted |"
 emit "| \`axiom\` | $(count_lines "$axioms") | listed |"
 emit "| \`unsafe\` | $(count_lines "$unsafes") | listed |"
 emit "| \`@[extern]\` (FFI) | $(count_lines "$externs") | listed |"
@@ -138,6 +140,7 @@ emit "| handwritten C/C++ files | $(count_lines "$c_inventory") | inventoried |"
 emit "| vendored trees | $(count_lines "$vendored") | inventoried |"
 
 emit_class "Proof holes (sorry / admit)" "$holes"
+emit_class "Theorems and lemmas" "$theorems"
 emit_class "Axioms" "$axioms"
 emit_class "Unsafe declarations" "$unsafes"
 emit_class "FFI surface (@[extern])" "$externs"
