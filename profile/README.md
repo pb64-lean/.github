@@ -93,23 +93,42 @@ correctness proofs and enter Lean through a small, explicit C shim with
 `@[extern]` bindings.
 
 The Lean protocol code is implemented, tested (known-answer vectors,
-live-server matrices, end-to-end scenarios), **and increasingly carries
+live-server matrices, end-to-end scenarios), **and carries roughly 645
 kernel-checked laws about the implementation itself** — not a parallel
-model. Representative results: the TLS record framer (byte conservation,
-fragmentation independence, nonce injectivity, seal/open inversion),
-handshake wire codecs (roundtrips with residual, GREASE-tolerant extension
-preservation), strict-DER exact-slice retention carried through to the
-bytes certificate signatures are verified over, the PostgreSQL protocol
-machine's well-formedness invariant with error/`Sync` recovery attribution,
-gRPC codec laws up to HPACK Huffman decode∘encode, and a registry whose
-RPC-shape agreement is structural rather than checked at runtime. Generated
-protobuf validators ship with `validate_sound` / `validate_complete`
-theorems per message, and the example service binds its authorization
-propositions to an unfabricable authenticated principal.
+model. Representative results:
 
-What is **not** claimed: no refinement theorem against any RFC, no security
-proofs, no timing analysis of Lean control code. Each repository's README
-states its own boundary candidly, and `rules_lean`'s `lean_assurance_test`
-audits the compiled environment (axiom closures, `sorry` reachability,
-`unsafe`/`@[extern]`/`partial` inventories) so those claims stay honest as
-the code moves.
+- **TLS**: nonces never repeat within a traffic-secret epoch across a
+  connection's emissions (resting on one named KDF-injectivity assumption,
+  since HKDF is an opaque HACL\* binding); the record framer conserves
+  bytes and is independent of how the stream is fragmented; handshake
+  codecs round-trip with unknown/GREASE values preserved; a parsed
+  ClientHello re-encodes to its own bytes, which is what the retry logic
+  now relies on; the key schedule structurally refines RFC 8446 §7.1;
+  strict-DER exact-slice retention reaches the bytes certificate signatures
+  are verified over.
+- **PostgreSQL**: a pipelined client cannot misattribute a response — every
+  user-visible success pops exactly the head operation, in submission
+  order — plus `Sync`-recovery alignment, and codec round-trips including
+  the lossless base-10000 numeric.
+- **gRPC**: RPC-shape agreement is structural rather than runtime-checked;
+  a stream rejected at headers can never accept a body or reach a handler;
+  flow-control credit is conserved; codec laws run up to HPACK Huffman
+  `decode∘encode`.
+- **Generated code**: every protovalidate-annotated message ships
+  `validate_sound` / `validate_complete` theorems, and the example service
+  binds its authorization propositions to an unfabricable authenticated
+  principal.
+
+What is **not** claimed: no refinement theorem against any RFC as a whole,
+no security proofs, no timing analysis, nothing about the C shims beyond
+their preconditions. Each repository's README states its own boundary, and
+19 `lean_assurance_test` targets audit the compiled environment on every
+build — axiom closures, `sorry` reachability, and `@[extern]` inventories
+pinned to the exact modules allowed to contain them. tls13-lean and pg-lean
+close over only `propext`, `Classical.choice`, `Quot.sound`.
+
+Proving these properties found real defects, which is the point: a 4 MiB
+gRPC flow-control deadlock, a client preface race, nineteen format-validator
+divergences from the protovalidate conformance suite, a float comparison the
+kernel could prove but CEL rejects, and a malformed numeric that parsed
+silently as zero.
