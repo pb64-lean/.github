@@ -75,10 +75,10 @@ action environment and thus its cache key.
 
 - The repos build Lean `4.31.0-pre-24bef91` from source via `nix-build`
   (rules_lean's `nix_toolchain`); public binary caches cannot serve it. A
-  machine's **first** build pays ~1–2 h; afterwards the store path persists.
-  The runner module lists the identical pinned derivation in
+  runner without a pre-seeded store path requires ~1–2 h to build it. The
+  runner module lists the identical pinned derivation in
   `environment.systemPackages`, which makes the system profile a permanent
-  GC root — nix GC can never collect the toolchain.
+  GC root, so nix GC cannot collect the toolchain.
 - Each machine runs a `bazel-remote` cache on `127.0.0.1:9092` (HTTP,
   100 GB LRU). The engine probes it per run and degrades gracefully.
 - Weekly hygiene (systemd timers): Sunday 04:00 restart idle runners (the
@@ -86,23 +86,23 @@ action environment and thus its cache key.
   bases; the next build re-warms from bazel-remote), 05:00 `nix.gc`,
   06:00 `nix.optimise`. An hourly disk guard force-prunes below 30 GiB free.
 
-## Onboarding bill-nixos-alpha
+## Provisioning a NixOS runner host
 
-1. **Pre-seed the toolchain** (skips the cold build): on beta
-   `LEAN=$(nix-build /etc/nixos/nix/pkgs/lean4 --no-out-link)`, then from
-   alpha: `sudo nix copy --no-check-sigs --from ssh://bill@bill-nixos-beta "$LEAN"`
-   (tailnet). Or skip and let the first job pay it (240-min timeouts cover it).
-2. **sops**: on alpha generate/read the age key
+1. **Pre-seed the toolchain** (optional): on an existing runner, set
+   `LEAN=$(nix-build /etc/nixos/nix/pkgs/lean4 --no-out-link)`, then copy that
+   store path to the target host with
+   `sudo nix copy --no-check-sigs --from ssh://<existing-runner> "$LEAN"`.
+   Without pre-seeding, the 240-minute job timeout covers the source build.
+2. **sops**: on the target host, generate or read the age key
    (`sudo age-keygen -y /var/lib/sops-nix/key.txt`), add the recipient to
    `.sops.yaml`, run `sops updatekeys secrets.yaml`, commit.
-3. **Host prerequisites** (lift verbatim from beta's `configuration.nix` if
-   absent on alpha): `virtualisation.docker.enable`, the `programs.nix-ld`
-   block, the `/bin/bash` activation-script shim, and
+3. **Host prerequisites**: configure `virtualisation.docker.enable`, the
+   `programs.nix-ld` block, the `/bin/bash` activation-script shim, and
    `security.allowUserNamespaces = true` +
    `boot.kernel.sysctl."kernel.unprivileged_userns_clone" = 1`
    (Bazel's linux-sandbox needs user namespaces).
-4. Import `github-runners.nix` into alpha's configuration; rebuild; verify
-   four runners online in org settings.
+4. Import `github-runners.nix` into the target host configuration, rebuild,
+   and verify both host runners online in organization settings.
 
 ## Known failure modes
 
