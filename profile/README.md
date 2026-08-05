@@ -8,8 +8,9 @@ refinement-typed protobuf validation, a PostgreSQL client, TLS 1.3 over
 HACL\* verified cryptographic primitives, and an integrated example service.
 
 **Start with [`lean-acme-widgets`](https://github.com/pb64-lean/lean-acme-widgets)** —
-the example service that ties everything together. **The central original
-idea is in [`protovalidate-lean`](https://github.com/pb64-lean/protovalidate-lean)**:
+the example service that integrates the ecosystem. **The defining
+verified-interface pattern is implemented by
+[`protovalidate-lean`](https://github.com/pb64-lean/protovalidate-lean)**:
 externally declared CEL constraints (buf.validate) compiled into ordinary
 Lean subtypes and dependent propositions, with proof-carrying values
 constructed at the decode/validation boundary — so handlers consume data
@@ -23,7 +24,7 @@ whose validation and policy evidence is machine-checked.
 | 2 | [`protovalidate-lean`](https://github.com/pb64-lean/protovalidate-lean) | Go protoc plugin + Lean runtime compiling a documented subset of buf.validate CEL rules into field subtypes and dependent message propositions; generated `validate`/`decodeValid` construct proof-carrying values |
 | 3 | [`grpc-lean`](https://github.com/pb64-lean/grpc-lean) | Protobuf codegen and a pure-Lean gRPC client/server runtime over HTTP/2: all four RPC shapes (batched and incremental streaming), deadlines, pre-body header authorization, gzip, health + reflection services, TLS termination |
 | 4 | [`pg-lean`](https://github.com/pb64-lean/pg-lean) | PostgreSQL client: pure-Lean wire protocol (3.0/3.2), SCRAM-SHA-256(-PLUS) with channel binding, TLS with `verify-full`, COPY, pipelining, notifications; live-tested against PostgreSQL 17 and 18 |
-| 5 | [`tls13-lean`](https://github.com/pb64-lean/tls13-lean) | TLS 1.3 client/server machinery in Lean over HACL\* verified crypto via an explicit C FFI; sans-I/O engines, X.509 path validation, channel binding (currently ChaCha20-Poly1305 / X25519 + optional P-256 / Ed25519) |
+| 5 | [`tls13-lean`](https://github.com/pb64-lean/tls13-lean) | TLS 1.3 client/server machinery in Lean over HACL\* verified crypto via an explicit C FFI; sans-I/O engines, X.509 path validation, channel binding, ChaCha20-Poly1305, X25519, optional P-256, and Ed25519 |
 | 6 | [`rules_lean`](https://github.com/pb64-lean/rules_lean) | Bazel/Bzlmod rules for Lean 4: `lean_library`/`lean_binary`/`lean_test`, locked Lake dependency import, C interface export, portable static Linux executables |
 
 ## Checking out and building
@@ -44,13 +45,13 @@ recommended) and **Nix** (the Lean toolchain is nix-built). The live
 end-to-end scripts additionally use Docker Compose, `grpcurl`, and
 `openssl`.
 
-## The toolchain story, in one place
+## Build and toolchain contract
 
 - **Canonical build and test tool: Bazel** via `rules_lean`.
   `bazel test //...` in each repository is the validation command.
 - **Canonical compiler: Lean `4.31.0-pre-24bef91`**, built by Nix from a
   pinned nixpkgs revision plus a `lean4_upstream_std` overlay (the
-  pre-release is needed for the newer `Std.Async` networking modules).
+  pinned compiler provides the required `Std.Async` networking modules).
   Five repositories consume the overlay from
   `grpc-lean/third_party/Lean-zh/protobuf/nixpkgs.{nix,json}`; `rules_lean`
   carries its own copy of the same pin.
@@ -61,9 +62,11 @@ end-to-end scripts additionally use Docker Compose, `grpcurl`, and
 - **Lakefiles are IDE project models only** (they let `lake serve` resolve
   the module graph and sibling imports). `lake build` is not a supported
   build path; `rules_lean` and `protovalidate-lean` have no lakefile at all.
-- **Compatibility**: all modules are version `0.1.0` local-path
-  developments. There are no published registry versions, tags, or
-  cross-version guarantees yet.
+- **Compatibility**: all modules use version `0.1.0` and resolve sibling
+  dependencies through `local_path_override`. The supported configuration is
+  the pinned repository set built together. Registry releases, version tags,
+  and cross-version compatibility are outside the published compatibility
+  contract.
 
 ## CI
 
@@ -92,9 +95,9 @@ The HACL\* cryptographic primitives carry externally machine-verified
 correctness proofs and enter Lean through a small, explicit C shim with
 `@[extern]` bindings.
 
-The Lean protocol code is implemented, tested (known-answer vectors,
-live-server matrices, end-to-end scenarios), **and carries roughly 645
-kernel-checked laws about the implementation itself** — not a parallel
+The Lean protocol code combines executable tests (known-answer vectors,
+live-server matrices, and end-to-end scenarios) with **kernel-checked laws
+about the implementation itself**, rather than a parallel specification
 model. Representative results:
 
 - **TLS**: nonces never repeat within a traffic-secret epoch across a
@@ -102,8 +105,9 @@ model. Representative results:
   since HKDF is an opaque HACL\* binding); the record framer conserves
   bytes and is independent of how the stream is fragmented; handshake
   codecs round-trip with unknown/GREASE values preserved; a parsed
-  ClientHello re-encodes to its own bytes, which is what the retry logic
-  now relies on; the key schedule structurally refines RFC 8446 §7.1;
+  ClientHello re-encodes to its own bytes, and retry processing preserves
+  that exact-byte identity; the key schedule structurally refines RFC 8446
+  §7.1;
   strict-DER exact-slice retention reaches the bytes certificate signatures
   are verified over.
 - **PostgreSQL**: a pipelined client cannot misattribute a response — every
@@ -122,13 +126,7 @@ model. Representative results:
 What is **not** claimed: no refinement theorem against any RFC as a whole,
 no security proofs, no timing analysis, nothing about the C shims beyond
 their preconditions. Each repository's README states its own boundary, and
-19 `lean_assurance_test` targets audit the compiled environment on every
-build — axiom closures, `sorry` reachability, and `@[extern]` inventories
-pinned to the exact modules allowed to contain them. tls13-lean and pg-lean
-close over only `propext`, `Classical.choice`, `Quot.sound`.
-
-Proving these properties found real defects, which is the point: a 4 MiB
-gRPC flow-control deadlock, a client preface race, nineteen format-validator
-divergences from the protovalidate conformance suite, a float comparison the
-kernel could prove but CEL rejects, and a malformed numeric that parsed
-silently as zero.
+`lean_assurance_test` targets audit the compiled environment on every build —
+axiom closures, `sorry` reachability, and `@[extern]` inventories pinned to
+the exact modules allowed to contain them. tls13-lean and pg-lean close over
+only `propext`, `Classical.choice`, and `Quot.sound`.
