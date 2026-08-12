@@ -1,10 +1,11 @@
 name: integration
 
-# Reusable integration engine: multi-repo checkout + an arbitrary script on
-# the docker-capable self-hosted runner. One lean-integration runner per
-# machine serializes these jobs, which use fixed host ports (54397-54399)
-# and fixed docker-compose project names. Callers must trigger only on push
-# to main, schedule, or workflow_dispatch — never pull_request.
+# Reusable integration engine: optional multi-repo checkout + an arbitrary
+# integration or downstream-consumer script on the docker-capable self-hosted
+# runner. One lean-integration runner per machine serializes these jobs,
+# protecting fixed host ports and docker-compose project names for callers
+# that use them. Callers must trigger only on push to main, schedule, or
+# workflow_dispatch — never pull_request.
 
 on:
   workflow_call:

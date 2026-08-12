@@ -5,15 +5,20 @@
 - **Shared engine (this repo)**: reusable workflows
   [`bazel-ci.yml`](../.github/workflows/bazel-ci.yml) (hermetic
   `bazel test` on self-hosted runners),
-  [`integration.yml`](../.github/workflows/integration.yml) (docker-backed
-  integration scripts), and [`assurance.yml`](../.github/workflows/assurance.yml)
-  (GitHub-hosted static scan), plus the
+  [`integration.yml`](../.github/workflows/integration.yml) (arbitrary
+  integration and standalone-downstream scripts on the Docker-capable
+  integration runner), and
+  [`assurance.yml`](../.github/workflows/assurance.yml) (GitHub-hosted static
+  scan), plus the
   [`checkout-siblings`](../actions/checkout-siblings/action.yml) composite
-  action that reproduces the side-by-side checkout layout Bzlmod
-  `local_path_override` requires.
-- **Per-repo callers**: each repository has a thin `.github/workflows/ci.yml`
-  (and, where applicable, `pg-live.yml` / `e2e.yml`) that calls the engine
-  with its sibling list.
+  action that, when requested, reproduces the side-by-side checkout layout
+  Bzlmod `local_path_override` requires.
+- **Per-repo entry workflows**: each repository has `.github/workflows/ci.yml`
+  and `.github/workflows/assurance.yml` entry points (plus `pg-live.yml` /
+  `e2e.yml` where applicable). They call the shared engines and add
+  repository-specific jobs where needed. Callers supply sibling lists only
+  when they use local overrides; archive-backed roots such as Lentil can run
+  with no sibling checkout.
 
 ## Security model (public repos + self-hosted runners)
 
@@ -46,12 +51,12 @@ Two persistent org-level runners per machine:
 | Labels | User | Purpose |
 | --- | --- | --- |
 | `self-hosted, nixos, <host>, lean-hermetic` | gh-runner-hermetic | `bazel test //...` jobs (no docker) |
-| `self-hosted, nixos, <host>, lean-integration, docker` | gh-runner-integration | docker/compose integration jobs |
+| `self-hosted, nixos, <host>, lean-integration, docker` | gh-runner-integration | integration and standalone downstream jobs (Docker available) |
 
-One job per runner at a time is the serialization mechanism for the fixed
-host ports (54397/54398 acme compose, 54399 pg-live, 50153 grpcurl interop)
-and the fixed compose project name (`lean-acme-widgets`). Workflows select by
-capability label (`lean-hermetic` / `lean-integration`), never by host.
+For callers that use them, one job per runner at a time protects the fixed host
+ports (54397/54398 acme compose, 54399 pg-live, 50153 grpcurl interop) and the
+fixed compose project name (`lean-acme-widgets`). Workflows select by capability
+label (`lean-hermetic` / `lean-integration`), never by host.
 
 Runner PATH must provide: `bazel` 8.5.0, `nix-build`/`nix-store`, `git`,
 `docker` + `docker compose` (integration), `grpcurl`, `nc`, `openssl`,
@@ -113,5 +118,5 @@ action environment and thus its cache key.
 | OOM (no swap) | `ci.slice` MemoryHigh/Max + `ManagedOOMMemoryPressure=kill` makes CI the designated victim; `--local_resources=memory=40960` keeps Bazel under the ceiling |
 | Nix GC collects the toolchain | impossible while the system-profile GC root exists (see above) |
 | Orphaned docker containers after a timeout-kill | `integration.yml`'s `always()` cleanup step removes `pg-lean-live-*` containers and the `lean-acme-widgets` compose project's containers/volumes/networks |
-| Sibling `main` regression reddens downstream repos | intended integration signal; weekly schedules surface it without pushes |
+| Sibling `main` regression reddens local-override downstream repos | intended integration signal; weekly schedules surface it without pushes; archive-pinned dependency edges are insulated until their pins advance |
 | Timing-flaky grpcurl deadline check | `--flaky_test_attempts=3` on the interop job: transient losses report FLAKY (green), persistent failures stay red |
